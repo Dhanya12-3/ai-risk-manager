@@ -1,135 +1,45 @@
-import pandas as pd
+from pathlib import Path
+import csv
 
 
-def detect_fraud_spikes(
-    csv_path="data/raw/transactions.csv",
-    window_size=500,
-    spike_multiplier=2.5
-):
-    """
-    Detect unusually high fraud rates in recent transactions.
+def detect_fraud_spikes():
 
-    This is a defensive fraud-monitoring component.
-    It does not generate attack instructions or offensive behavior.
-    """
+    path = Path("data/transactions.csv")
 
-    df = pd.read_csv(csv_path)
+    if not path.exists():
+        return []
 
-    # Make sure timestamp exists
-    if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(
-            df["timestamp"],
-            errors="coerce"
-        )
+    with open(path, "r", newline="") as f:
+        rows = list(csv.DictReader(f))
 
-        df = df.sort_values("timestamp")
+    if not rows:
+        return []
 
-    results = []
+    suspicious = 0
 
-    # Check required columns
-    required_columns = {
-        "merchant_category",
-        "label"
-    }
+    for row in rows:
+        try:
+            ip_risk = float(row.get("ip_risk_score", 0))
+            failed = int(row.get("failed_attempts_last_24h", 0))
 
-    missing = required_columns - set(df.columns)
+            if ip_risk >= 0.7 or failed >= 3:
+                suspicious += 1
 
-    if missing:
-        raise ValueError(
-            f"Missing required columns: {list(missing)}"
-        )
-
-    # Analyze each merchant category
-    for category in df["merchant_category"].dropna().unique():
-
-        category_df = df[
-            df["merchant_category"] == category
-        ].copy()
-
-        # Need enough historical data
-        if len(category_df) < window_size * 2:
+        except (ValueError, TypeError):
             continue
 
-        # Historical transactions
-        baseline = category_df.iloc[:-window_size]
+    if suspicious >= 5:
 
-        # Most recent transactions
-        current = category_df.iloc[-window_size:]
-
-        baseline_rate = float(
-            baseline["label"].mean()
-        )
-
-        current_rate = float(
-            current["label"].mean()
-        )
-
-        # Avoid division by zero
-        if baseline_rate <= 0:
-            continue
-
-        multiplier = (
-            current_rate / baseline_rate
-        )
-
-        increase_percentage = (
-            (current_rate - baseline_rate)
-            / baseline_rate
-        ) * 100
-
-        # Only report meaningful spikes
-        if multiplier >= spike_multiplier:
-
-            if multiplier >= 5:
-                severity = "CRITICAL"
-
-            elif multiplier >= 3:
-                severity = "HIGH"
-
-            else:
-                severity = "MEDIUM"
-
-            results.append({
-
-                "merchant_category": str(category),
-
-                "baseline_fraud_rate": round(
-                    baseline_rate * 100,
-                    2
+        return [
+            {
+                "severity": "HIGH",
+                "message": (
+                    f"Fraud spike detected: {suspicious} "
+                    "suspicious transactions found."
                 ),
+                "suspicious_transactions": suspicious,
+                "action": "Review affected transactions immediately"
+            }
+        ]
 
-                "current_fraud_rate": round(
-                    current_rate * 100,
-                    2
-                ),
-
-                "increase_percentage": round(
-                    increase_percentage,
-                    2
-                ),
-
-                "spike_multiplier": round(
-                    multiplier,
-                    2
-                ),
-
-                "severity": severity,
-
-                "affected_transactions": int(
-                    len(current)
-                ),
-
-                "recommended_action": (
-                    "Increase verification for high-risk "
-                    "transactions and investigate the affected "
-                    "merchant category."
-                )
-            })
-
-    # Highest spike first
-    results.sort(
-        key=lambda x: x["spike_multiplier"],
-        reverse=True
-    )
-
-    return results
+    return []
