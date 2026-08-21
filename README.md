@@ -1,4 +1,4 @@
-# AI Risk Manager — FraudShield (Step 1)
+# AI Risk Manager — FraudShield
 
 This repository contains the ML/data foundation for Track 02: AI Risk Manager.
 
